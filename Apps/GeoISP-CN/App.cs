@@ -25,7 +25,7 @@ using TechnitiumLibrary.Net.Dns;
 
 namespace GeoIspCn
 {
-    public sealed class Address : IDnsApplication, IDnsAppRecordRequestHandler
+    public sealed class App : IDnsApplication, IDnsAppRecordRequestHandler
     {
         #region variables
 
@@ -62,10 +62,10 @@ namespace GeoIspCn
 
         #region public
 
-        public Address()
+        public App()
         { }
 
-        internal Address(IGeoProviderLookup lookup = null)
+        internal App(IGeoProviderLookup lookup = null)
         {
             _lookup = lookup;
         }

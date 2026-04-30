@@ -13,7 +13,7 @@
 		<RootNamespace>GeoIspCn</RootNamespace>
 		<PackageProjectUrl>https://technitium.com/dns/</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/TechnitiumSoftware/DnsServer</RepositoryUrl>
-		<Description>Allows creating APP records in primary and forwarder zones that return A or AAAA records, or CNAME records based on the client country and ISP/ASN. Supports EDNS Client Subnet (ECS), mixed IP/CNAME branches, MaxMind Country and ISP/ASN databases, and a built-in CN ISP prefix database named GeoIP2-ISP-CN.mmdb.</Description>
+		<Description>Allows creating APP records in primary and forwarder zones that return A, AAAA, CNAME, or ANAME records based on the client country and ISP/ASN. Supports EDNS Client Subnet (ECS), mixed JSON record branches, MaxMind Country and ISP/ASN databases, and a built-in CN ISP prefix database named GeoIP2-ISP-CN.mmdb.</Description>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 		<OutputType>Library</OutputType>
 	</PropertyGroup>

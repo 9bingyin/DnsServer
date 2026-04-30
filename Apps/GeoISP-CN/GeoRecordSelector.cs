@@ -52,27 +52,22 @@ namespace GeoIspCn
         {
             selection = null;
 
-            if ((jsonCountry.ValueKind == JsonValueKind.Object) && jsonCountry.TryGetProperty("providers", out JsonElement jsonProviders) && (jsonProviders.ValueKind == JsonValueKind.Object))
+            if (jsonCountry.ValueKind == JsonValueKind.Object)
             {
-                foreach (string providerKey in lookupResult.ProviderKeys)
+                if (IsRecordValue(jsonCountry))
                 {
-                    if (jsonProviders.TryGetProperty(providerKey, out JsonElement jsonProviderValue) && IsSupportedValue(jsonProviderValue))
-                    {
-                        selection = new GeoRecordSelection(jsonProviderValue.Clone(), normalizedCountryCode, providerKey);
-                        return true;
-                    }
-                }
-
-                if (jsonProviders.TryGetProperty("default", out JsonElement jsonProviderDefault) && IsSupportedValue(jsonProviderDefault))
-                {
-                    selection = new GeoRecordSelection(jsonProviderDefault.Clone(), normalizedCountryCode, "default");
+                    selection = new GeoRecordSelection(jsonCountry.Clone(), normalizedCountryCode, null);
                     return true;
                 }
 
-                return false;
+                if (TrySelectProviderValue(jsonCountry, lookupResult, normalizedCountryCode, out selection))
+                    return true;
+
+                if (jsonCountry.TryGetProperty("providers", out JsonElement jsonProviders) && (jsonProviders.ValueKind == JsonValueKind.Object))
+                    return TrySelectProviderValue(jsonProviders, lookupResult, normalizedCountryCode, out selection);
             }
 
-            if ((jsonCountry.ValueKind == JsonValueKind.Array) || (jsonCountry.ValueKind == JsonValueKind.String))
+            if (IsSupportedValue(jsonCountry))
             {
                 selection = new GeoRecordSelection(jsonCountry.Clone(), normalizedCountryCode, null);
                 return true;
@@ -81,9 +76,36 @@ namespace GeoIspCn
             return false;
         }
 
+        static bool TrySelectProviderValue(JsonElement jsonProviders, GeoLookupResult lookupResult, string normalizedCountryCode, out GeoRecordSelection? selection)
+        {
+            selection = null;
+
+            foreach (string providerKey in lookupResult.ProviderKeys)
+            {
+                if (jsonProviders.TryGetProperty(providerKey, out JsonElement jsonProviderValue) && IsSupportedValue(jsonProviderValue))
+                {
+                    selection = new GeoRecordSelection(jsonProviderValue.Clone(), normalizedCountryCode, providerKey);
+                    return true;
+                }
+            }
+
+            if (jsonProviders.TryGetProperty("default", out JsonElement jsonProviderDefault) && IsSupportedValue(jsonProviderDefault))
+            {
+                selection = new GeoRecordSelection(jsonProviderDefault.Clone(), normalizedCountryCode, "default");
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool IsRecordValue(JsonElement value)
+        {
+            return value.TryGetProperty("A", out _) || value.TryGetProperty("AAAA", out _) || value.TryGetProperty("CNAME", out _) || value.TryGetProperty("ANAME", out _);
+        }
+
         static bool IsSupportedValue(JsonElement value)
         {
-            return (value.ValueKind == JsonValueKind.Array) || (value.ValueKind == JsonValueKind.String);
+            return (value.ValueKind == JsonValueKind.Object) || (value.ValueKind == JsonValueKind.Array) || (value.ValueKind == JsonValueKind.String);
         }
     }
 }

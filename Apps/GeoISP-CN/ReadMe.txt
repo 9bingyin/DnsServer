@@ -1,7 +1,7 @@
 GeoISP-CN
 =========
 
-This app creates APP records that return A/AAAA records or CNAME records based on the client country and ISP/ASN. It supports EDNS Client Subnet (ECS).
+This app creates APP records that return A, AAAA, CNAME, or ANAME records based on the client country and ISP/ASN. It supports EDNS Client Subnet (ECS).
 
 Database lookup order:
 
@@ -17,27 +17,44 @@ GeoIP2-ISP-CN.mmdb is a CN carrier prefix database intended for internal routing
 - China Broadnet: cbn, chinabroadnet, chinabroadcast
 - CERNET: cernet, chinaeducation
 
-APP record data supports mixed branches. A branch value can be either an array of IP addresses or a domain name string.
+APP record data supports mixed branches. A branch value should be a JSON record object. If CNAME or ANAME and the requested A/AAAA type both exist in the same branch, the app randomly returns one response type at 1:1. CNAME/ANAME and A/AAAA are never returned together. CNAME and ANAME values can be a single absolute domain name or an array of absolute domain names selected randomly at equal weight.
 
 Example:
 
 {
   "CN": {
-    "providers": {
-      "ct": "154.39.66.250",
-      "chinatelecom": "154.39.66.250",
-      "default": [
+    "ct": {
+      "A": [
+        "154.39.66.250"
+      ],
+      "CNAME": [
+        "ct1.example.com.",
+        "ct2.example.com."
+      ]
+    },
+    "chinatelecom": {
+      "A": [
+        "154.39.66.250"
+      ]
+    },
+    "default": {
+      "A": [
         "82.26.72.199",
         "82.26.72.200"
+      ],
+      "AAAA": [
+        "2001:db8::1"
       ]
     }
   },
-  "default": [
-    "82.26.72.199",
-    "82.26.72.200"
-  ]
+  "default": {
+    "CNAME": [
+      "global1.example.com.",
+      "global2.example.com."
+    ]
+  }
 }
 
-Provider keys are normalized to lowercase, spaces become '-', and punctuation is removed. You can use '{CountryCode}' and '{ProviderKey}' variables in CNAME branches.
+Provider keys are normalized to lowercase, spaces become '-', and punctuation is removed. You can use '{CountryCode}' and '{ProviderKey}' variables in CNAME and ANAME branches.
 
 To update MaxMind databases, zip the .mmdb file and use the manual Update option. Supported file names include GeoIP2-Country.mmdb, GeoLite2-Country.mmdb, GeoIP2-ISP.mmdb, GeoLite2-ASN.mmdb, and GeoIP2-ISP-CN.mmdb.
