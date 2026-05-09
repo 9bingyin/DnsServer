@@ -24,6 +24,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -57,6 +58,7 @@ namespace QueryLogsPostgreSql
         Thread? _consumerThread;
         const int BULK_INSERT_COUNT = 1000;
         const int BULK_INSERT_ERROR_DELAY = 10000;
+        const int BULK_REMOVE_COUNT = 10000;
 
         readonly Timer _cleanupTimer;
         const int CLEAN_UP_TIMER_INITIAL_INTERVAL = 5 * 1000;
@@ -89,25 +91,42 @@ namespace QueryLogsPostgreSql
 
                             int recordsToRemove = totalRecords - _maxLogRecords;
                             if (recordsToRemove > 0)
-                            {
-                                await using (NpgsqlCommand command = connection.CreateCommand())
-                                {
-                                    command.CommandText = $"DELETE FROM dns_logs WHERE dlid IN (SELECT * FROM (SELECT dlid FROM dns_logs ORDER BY dlid LIMIT {recordsToRemove}) AS T1);";
-
-                                    await command.ExecuteNonQueryAsync();
-                                }
-                            }
+                                await BatchRemove(recordsToRemove);
                         }
 
                         if (_maxLogDays > 0)
                         {
+                            int recordsToRemove;
+
                             await using (NpgsqlCommand command = connection.CreateCommand())
                             {
-                                command.CommandText = "DELETE FROM dns_logs WHERE timestamp < @timestamp;";
+                                command.CommandText = "SELECT Count(*) FROM dns_logs WHERE timestamp < @timestamp;";
 
                                 command.Parameters.AddWithValue("@timestamp", DateTime.UtcNow.AddDays(_maxLogDays * -1));
 
-                                await command.ExecuteNonQueryAsync();
+                                recordsToRemove = Convert.ToInt32(await command.ExecuteScalarAsync());
+                            }
+
+                            if (recordsToRemove > 0)
+                                await BatchRemove(recordsToRemove);
+                        }
+
+                        async Task BatchRemove(int recordsToRemove)
+                        {
+                            int batchToRemove;
+
+                            while (recordsToRemove > 0)
+                            {
+                                batchToRemove = Math.Min(recordsToRemove, BULK_REMOVE_COUNT);
+
+                                await using (NpgsqlCommand command = connection.CreateCommand())
+                                {
+                                    command.CommandText = $"DELETE FROM dns_logs WHERE dlid IN (SELECT dlid FROM dns_logs ORDER BY dlid LIMIT {batchToRemove});";
+
+                                    await command.ExecuteNonQueryAsync();
+                                }
+
+                                recordsToRemove -= batchToRemove;
                             }
                         }
                     }
@@ -590,40 +609,55 @@ CREATE TABLE IF NOT EXISTS dns_logs
                                     await ApplyConfig();
                                     return;
                                 }
-                                catch (Exception ex)
+                                catch (NpgsqlException ex)
                                 {
-                                    if (ex is not PostgresException ex2)
+                                    bool doRetry = false;
+                                    string message;
+
+                                    if (ex.InnerException is TimeoutException)
                                     {
+                                        doRetry = true;
+                                        message = "TimeoutException";
+                                    }
+                                    else if (ex.InnerException is SocketException ex2)
+                                    {
+                                        doRetry = true;
+                                        message = "SocketException (" + ex2.SocketErrorCode.ToString() + ")";
+                                    }
+                                    else
+                                    {
+                                        message = "NpgsqlException (0x" + ex.ErrorCode.ToString("x") + ")";
+                                    }
+
+                                    if (doRetry)
+                                    {
+                                        retryCount++;
+
+                                        if (retryCount < MAX_RETRIES)
+                                        {
+                                            _dnsServer?.WriteLog($"Failed to connect to the database server ({message}). Please check the app config and make sure the database server is online. Retrying in {RETRY_DELAY / 1000} seconds... (Attempt {retryCount})");
+                                            _dnsServer?.WriteLog(ex);
+
+                                            await Task.Delay(RETRY_DELAY);
+                                        }
+                                        else
+                                        {
+                                            _dnsServer?.WriteLog($"Failed to connect to the database server ({message}) after {retryCount} retries. Please check the app config and make sure the database server is online.");
+                                            _dnsServer?.WriteLog(ex);
+                                            return;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        _dnsServer?.WriteLog($"Failed to connect to the database server ({message}). Please check the app config and make sure the database server is online.");
                                         _dnsServer?.WriteLog(ex);
                                         return;
                                     }
-
-                                    switch (ex2.SqlState)
-                                    {
-                                        case PostgresErrorCodes.ConnectionException:
-                                        case PostgresErrorCodes.TooManyConnections:
-                                            retryCount++;
-
-                                            if (retryCount < MAX_RETRIES)
-                                            {
-                                                _dnsServer?.WriteLog($"Failed to connect to the database server ({ex2.SqlState}). Please check the app config and make sure the database server is online. Retrying in {RETRY_DELAY / 1000} seconds... (Attempt {retryCount})");
-                                                _dnsServer?.WriteLog(ex);
-
-                                                await Task.Delay(RETRY_DELAY);
-                                            }
-                                            else
-                                            {
-                                                _dnsServer?.WriteLog($"Failed to connect to the database server ({ex2.SqlState}) after {retryCount} retries. Please check the app config and make sure the database server is online.");
-                                                _dnsServer?.WriteLog(ex);
-                                                return;
-                                            }
-                                            break;
-
-                                        default:
-                                            _dnsServer?.WriteLog($"Failed to connect to the database server ({ex2.SqlState}). Please check the app config and make sure the database server is online.");
-                                            _dnsServer?.WriteLog(ex);
-                                            return;
-                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _dnsServer?.WriteLog(ex);
+                                    return;
                                 }
                             }
                         }
@@ -744,7 +778,9 @@ CREATE TABLE IF NOT EXISTS dns_logs
 
                 long totalPages = (totalEntries / entriesPerPage) + (totalEntries % entriesPerPage > 0 ? 1 : 0);
 
-                if ((pageNumber > totalPages) || (pageNumber < 0))
+                if (totalPages < 1)
+                    pageNumber = 1;
+                else if ((pageNumber > totalPages) || (pageNumber < 0))
                     pageNumber = totalPages;
 
                 long offset = (pageNumber - 1) * entriesPerPage;
