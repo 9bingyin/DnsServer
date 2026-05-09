@@ -215,6 +215,19 @@ public sealed class GeoIspCnRecordHandlerTests
         Assert.Null(response);
     }
 
+    [Fact]
+    public void Parses_ip2region_xdb_result_and_cn_provider_aliases()
+    {
+        List<string> providerKeys = [];
+        HashSet<string> seenProviderKeys = new(StringComparer.Ordinal);
+
+        bool found = Ip2RegionXdbProviderLookup.TryParse("亚洲|中国|北京|北京||电信|116.405285|39.904989|110100|010|100000|Asia/Shanghai|CNY|AS23724|IDC|53|CHXX0008|CN", providerKeys, seenProviderKeys, out string? countryCode);
+
+        Assert.True(found);
+        Assert.Equal("CN", countryCode);
+        Assert.Equal(["电信", "ct", "chinatelecom", "as23724"], providerKeys);
+    }
+
     static Task<DnsDatagram> ProcessAsync(string appRecordData, DnsResourceRecordType questionType, GeoLookupResult lookupResult, Func<int, int>? randomNext = null, string appRecordName = AppRecordName)
     {
         DnsDatagram request = new(1234, false, DnsOpcode.StandardQuery, false, false, true, false, false, false, DnsResponseCode.NoError, [new DnsQuestionRecord(appRecordName, questionType, DnsClass.IN)]);

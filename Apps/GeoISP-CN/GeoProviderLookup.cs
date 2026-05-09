@@ -28,8 +28,16 @@ namespace GeoIspCn
             List<string> providerKeys = new List<string>(5);
             HashSet<string> seenProviderKeys = new HashSet<string>(StringComparer.Ordinal);
 
-            if (_maxMind.CountryReader.TryCountry(address, out CountryResponse? countryResponse) && (countryResponse?.Country is not null))
+            if ((_maxMind.CountryReader is not null) && _maxMind.CountryReader.TryCountry(address, out CountryResponse? countryResponse) && (countryResponse?.Country is not null))
                 countryCode = countryResponse.Country.IsoCode;
+
+            if ((_maxMind.Ip2RegionXdbSearcher is not null) && Ip2RegionXdbProviderLookup.TryLookup(_maxMind.Ip2RegionXdbSearcher, address, providerKeys, seenProviderKeys, fallbackScopePrefixLength, out string? xdbCountryCode, out scopePrefixLength))
+            {
+                countryCode ??= xdbCountryCode;
+
+                if (providerKeys.Count > 0)
+                    return new GeoLookupResult(countryCode, providerKeys, scopePrefixLength);
+            }
 
             if ((_maxMind.CnIspReader is not null) && GeoCnProviderLookup.TryLookup(_maxMind.CnIspReader, address, providerKeys, seenProviderKeys, out scopePrefixLength))
                 return new GeoLookupResult(countryCode, providerKeys, scopePrefixLength);

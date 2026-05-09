@@ -18,6 +18,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 using DnsServerCore.ApplicationCommon;
+using IP2Region.Net.Abstractions;
+using IP2Region.Net.XDB;
 using MaxMind.Db;
 using MaxMind.GeoIP2;
 using System;
@@ -32,6 +34,7 @@ namespace GeoIspCn
         static MaxMind _maxMind;
 
         readonly DatabaseReader _mmCountryReader;
+        readonly ISearcher _ip2RegionXdbSearcher;
         readonly Reader _mmCnIspReader;
         readonly DatabaseReader _mmIspReader;
         readonly DatabaseReader _mmAsnReader;
@@ -46,15 +49,19 @@ namespace GeoIspCn
             if (File.Exists(mmCnIspFile))
                 _mmCnIspReader = new Reader(mmCnIspFile);
 
+            string ip2RegionXdbFile = GetIp2RegionXdbFile(dnsServer.ApplicationFolder);
+            if (ip2RegionXdbFile is not null)
+                _ip2RegionXdbSearcher = new Searcher(CachePolicy.VectorIndex, ip2RegionXdbFile);
+
             string mmCountryFile = Path.Combine(dnsServer.ApplicationFolder, "GeoIP2-Country.mmdb");
 
             if (!File.Exists(mmCountryFile))
                 mmCountryFile = Path.Combine(dnsServer.ApplicationFolder, "GeoLite2-Country.mmdb");
 
-            if (!File.Exists(mmCountryFile))
+            if (File.Exists(mmCountryFile))
+                _mmCountryReader = new DatabaseReader(mmCountryFile);
+            else if (_ip2RegionXdbSearcher is null)
                 throw new FileNotFoundException("MaxMind Country file is missing!");
-
-            _mmCountryReader = new DatabaseReader(mmCountryFile);
 
             string mmIspFile = Path.Combine(dnsServer.ApplicationFolder, "GeoIP2-ISP.mmdb");
             if (File.Exists(mmIspFile))
@@ -82,6 +89,7 @@ namespace GeoIspCn
             if (disposing)
             {
                 _mmCountryReader?.Dispose();
+                _ip2RegionXdbSearcher?.Dispose();
                 _mmCnIspReader?.Dispose();
                 _mmIspReader?.Dispose();
                 _mmAsnReader?.Dispose();
@@ -110,10 +118,27 @@ namespace GeoIspCn
 
         #endregion
 
+        #region private
+
+        static string GetIp2RegionXdbFile(string applicationFolder)
+        {
+            string preferredFile = Path.Combine(applicationFolder, "GeoIP2-ISP-CN.xdb");
+            if (File.Exists(preferredFile))
+                return preferredFile;
+
+            string[] xdbFiles = Directory.GetFiles(applicationFolder, "*.xdb", SearchOption.TopDirectoryOnly);
+            return xdbFiles.Length == 1 ? xdbFiles[0] : null;
+        }
+
+        #endregion
+
         #region properties
 
         public DatabaseReader CountryReader
         { get { return _mmCountryReader; } }
+
+        public ISearcher Ip2RegionXdbSearcher
+        { get { return _ip2RegionXdbSearcher; } }
 
         public Reader CnIspReader
         { get { return _mmCnIspReader; } }
